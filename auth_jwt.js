@@ -1,3 +1,5 @@
+require('dotenv').config(); // Load environment variables from .env file
+
 var passport = require('passport');
 var JwtStrategy = require('passport-jwt').Strategy;
 var ExtractJwt = require('passport-jwt').ExtractJwt;

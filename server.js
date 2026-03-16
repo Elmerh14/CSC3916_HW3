@@ -1,11 +1,13 @@
+require('dotenv').config(); // Load environment variables from .env file
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const passport = require('passport');
-const authJwtController = require('./auth_jwt'); // You're not using authController, consider removing it
+const authJwtController = require('./auth_jwt');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const User = require('./Users');
-const Movie = require('./Movies'); // You're not using Movie, consider removing it
+const Movie = require('./Movies');
 
 const app = express();
 app.use(cors());
@@ -68,18 +70,202 @@ router.post('/signin', async (req, res) => { // Use async/await
 });
 
 router.route('/movies')
-    .get(authJwtController.isAuthenticated, async (req, res) => {
-        return res.status(500).json({ success: false, message: 'GET request not supported' });
-    })
-    .post(authJwtController.isAuthenticated, async (req, res) => {
-        return res.status(500).json({ success: false, message: 'POST request not supported' });
+  .get(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      const movies = await Movie.find(); // Changed from findOne() to find() to get all movies
+      if (movies.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "No movies in db",
+          movies: []
+        });
+      }
+      return res.status(200).json({ success: true, movies: movies });
+    }
+    catch (err) {
+      console.error(err);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching movies from db",
+      });
+    }
+  })
+  .post(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      if (!req.body.title || !req.body.releaseDate || !req.body.genre || !req.body.actors) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide all required fields: title, releaseDate, genre, and actors.'
+        });
+      }
+
+      if (!Array.isArray(req.body.actors) || req.body.actors.length < 3) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide at least 3 actors in the actors array.'
+        });
+      }
+
+      for (let i = 0; i < req.body.actors.length; i++) {
+        if (!req.body.actors[i].actorName || !req.body.actors[i].characterName) {
+          return res.status(400).json({
+            success: false,
+            message: 'Each actor must have both actorName and characterName.'
+          });
+        }
+      }
+
+      const newMovie = new Movie({
+        title: req.body.title,
+        releaseDate: req.body.releaseDate,
+        genre: req.body.genre,
+        actors: req.body.actors
+      });
+
+      await newMovie.save();
+
+      res.status(201).json({
+        success: true,
+        message: 'Movie created successfully!',
+        movie: newMovie
+      });
+    } catch (err) {
+      console.error(err);
+      if (err.name === 'ValidationError') {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error: ' + err.message
+        });
+      }
+      res.status(500).json({
+        success: false,
+        message: 'Error saving movie to database.'
+      });
+    }
+  });
+
+// Routes for movies/parameter title in my case
+router.route('/movies/:title')
+  .get(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      const movie = await Movie.findOne({ title: req.params.title });
+
+      if (!movie) {
+        return res.status(404).json({
+          success: false,
+          message: 'Movie not found.'
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        movie: movie
+      });
+
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({
+        success: false,
+        message: 'Error retrieving movie from database.'
+      });
+    }
+  })
+  .put(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      const movie = await Movie.findOne({ title: req.params.title });
+
+      if (!movie) {
+        return res.status(404).json({
+          success: false,
+          message: 'Movie not found.'
+        });
+      }
+
+      if (req.body.actors) {
+        if (!Array.isArray(req.body.actors) || req.body.actors.length < 3) {
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide at least 3 actors in the actors array.'
+          });
+        }
+
+        for (let i = 0; i < req.body.actors.length; i++) {
+          if (!req.body.actors[i].actorName || !req.body.actors[i].characterName) {
+            return res.status(400).json({
+              success: false,
+              message: 'Each actor must have both actorName and characterName.'
+            });
+          }
+        }
+      }
+
+      if (req.body.title) movie.title = req.body.title;
+      if (req.body.releaseDate) movie.releaseDate = req.body.releaseDate;
+      if (req.body.genre) movie.genre = req.body.genre;
+      if (req.body.actors) movie.actors = req.body.actors;
+
+      await movie.save();
+
+      res.status(200).json({
+        success: true,
+        message: 'Movie updated successfully!',
+        movie: movie
+      });
+
+    } catch (err) {
+      console.error(err);
+
+      if (err.name === 'ValidationError') {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error: ' + err.message
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error updating movie in database.'
+      });
+    }
+  })
+  .delete(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      const movie = await Movie.findOneAndDelete({ title: req.params.title });
+
+      if (!movie) {
+        return res.status(404).json({
+          success: false,
+          message: 'Movie not found.'
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Movie deleted successfully!',
+        movie: movie
+      });
+
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({
+        success: false,
+        message: 'Error deleting movie from database.'
+      });
+    }
+  })
+  .post(authJwtController.isAuthenticated, async (req, res) => {
+    res.status(405).json({
+      success: false,
+      message: 'POST method not supported on this route. Use POST /movies instead.'
     });
+  });
+
 
 app.use('/', router);
 
 const PORT = process.env.PORT || 8080; // Define PORT before using it
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
 
 module.exports = app; // for testing only
